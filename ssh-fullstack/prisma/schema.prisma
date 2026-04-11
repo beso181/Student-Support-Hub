@@ -1,0 +1,237 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════
+// CORE ENTITIES
+// ═══════════════════════════════════════
+
+model Club {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  books  Book[]
+  papers Paper[]
+
+  @@map("clubs")
+}
+
+model AcademicYear {
+  id        String   @id @default(uuid())
+  label     String                        // "2024–2025"
+  startYear Int      @map("start_year")
+  endYear   Int      @map("end_year")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  books  Book[]
+  papers Paper[]
+
+  @@map("academic_years")
+}
+
+model Book {
+  id              String   @id @default(uuid())
+  title           String
+  description     String?
+  publicationYear Int?     @map("publication_year")
+  editors         String?
+  coverUrl        String?  @map("cover_url")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  clubId         String       @map("club_id")
+  club           Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  academicYearId String       @map("academic_year_id")
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  parts    BookPart[]
+  chapters Chapter[]
+  papers   Paper[]
+
+  @@map("books")
+}
+
+model BookPart {
+  id         String   @id @default(uuid())
+  title      String                        // "Part 1", "Full Book"
+  partNumber Int      @map("part_number")
+  pdfUrl     String?  @map("pdf_url")
+  pageCount  Int?     @map("page_count")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  bookId String @map("book_id")
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  chapters Chapter[]
+  papers   Paper[]
+
+  @@map("book_parts")
+}
+
+model Chapter {
+  id            String   @id @default(uuid())
+  title         String
+  chapterNumber Int      @map("chapter_number")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  bookId String   @map("book_id")
+  book   Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  partId String   @map("part_id")
+  part   BookPart @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  papers Paper[]
+
+  @@map("chapters")
+}
+
+model Paper {
+  id          String   @id @default(uuid())
+  paperNumber Int      @map("paper_number")
+  title       String
+  authors     String
+  abstract    String?
+  keywords    String[]                     // PostgreSQL array
+  category    String?
+  year        Int?
+  pdfUrl      String?  @map("pdf_url")    // Supabase Storage public URL
+  pageStart   Int?     @map("page_start")
+  pageEnd     Int?     @map("page_end")
+  viewCount   Int      @default(0) @map("view_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  bookId         String        @map("book_id")
+  book           Book          @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  partId         String?       @map("part_id")
+  part           BookPart?     @relation(fields: [partId], references: [id])
+  chapterId      String?       @map("chapter_id")
+  chapter        Chapter?      @relation(fields: [chapterId], references: [id])
+  clubId         String        @map("club_id")
+  club           Club          @relation(fields: [clubId], references: [id])
+  academicYearId String        @map("academic_year_id")
+  academicYear   AcademicYear  @relation(fields: [academicYearId], references: [id])
+
+  pageViews PageView[]
+
+  @@index([bookId])
+  @@index([clubId])
+  @@index([academicYearId])
+  @@index([category])
+  @@map("papers")
+}
+
+// ═══════════════════════════════════════
+// USERS & AUTH
+// ═══════════════════════════════════════
+
+model Profile {
+  id        String   @id                  // matches Supabase auth.users.id
+  email     String   @unique
+  fullName  String?  @map("full_name")
+  role      Role     @default(STUDENT)
+  avatarUrl String?  @map("avatar_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  resources          Resource[]
+  communityPosts     CommunityPost[]
+  mentorshipStudent  MentorshipRequest[] @relation("StudentRequests")
+  mentorshipMentor   MentorshipRequest[] @relation("MentorRequests")
+  adminActions       AdminAction[]
+  pageViews          PageView[]
+
+  @@map("profiles")
+}
+
+enum Role {
+  STUDENT
+  ADMIN
+  SUPER_ADMIN
+}
+
+// ═══════════════════════════════════════
+// RESOURCES & COMMUNITY
+// ═══════════════════════════════════════
+
+model Resource {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  category    String?                     // 'study_guide', 'research_methods', etc.
+  fileUrl     String?  @map("file_url")
+  linkUrl     String?  @map("link_url")
+  viewCount   Int      @default(0) @map("view_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  createdById String?  @map("created_by_id")
+  createdBy   Profile? @relation(fields: [createdById], references: [id])
+
+  @@map("resources")
+}
+
+model CommunityPost {
+  id        String   @id @default(uuid())
+  title     String
+  content   String?
+  category  String?                       // 'announcement', 'discussion'
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  authorId String?  @map("author_id")
+  author   Profile? @relation(fields: [authorId], references: [id])
+
+  @@map("community_posts")
+}
+
+model MentorshipRequest {
+  id        String   @id @default(uuid())
+  subject   String
+  message   String?
+  status    String   @default("pending")  // 'pending', 'matched', 'completed'
+  createdAt DateTime @default(now()) @map("created_at")
+
+  studentId String?  @map("student_id")
+  student   Profile? @relation("StudentRequests", fields: [studentId], references: [id])
+  mentorId  String?  @map("mentor_id")
+  mentor    Profile? @relation("MentorRequests", fields: [mentorId], references: [id])
+
+  @@map("mentorship_requests")
+}
+
+// ═══════════════════════════════════════
+// ANALYTICS
+// ═══════════════════════════════════════
+
+model PageView {
+  id        String   @id @default(uuid())
+  page      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  paperId String?  @map("paper_id")
+  paper   Paper?   @relation(fields: [paperId], references: [id])
+  userId  String?  @map("user_id")
+  user    Profile? @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([paperId])
+  @@map("page_views")
+}
+
+model AdminAction {
+  id        String   @id @default(uuid())
+  action    String                         // 'create_paper', 'upload_book', etc.
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  adminId String  @map("admin_id")
+  admin   Profile @relation(fields: [adminId], references: [id])
+
+  @@map("admin_actions")
+}
